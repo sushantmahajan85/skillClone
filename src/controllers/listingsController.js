@@ -112,6 +112,29 @@ const listListings = async (req, res, next) => {
   }
 };
 
+const listFeaturedListings = async (req, res, next) => {
+  try {
+    const { limit = 6 } = req.query;
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 6, 1), 24);
+
+    const listings = await Listing.find({
+      status: 'active',
+      featured: true
+    })
+      .populate('sellerId', 'name avatarUrl')
+      .sort({ createdAt: -1 })
+      .limit(parsedLimit);
+
+    return res.json({
+      success: true,
+      listings,
+      count: listings.length
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getListingById = async (req, res, next) => {
   try {
     const listing = await Listing.findById(req.params.id).populate('sellerId', 'name avatarUrl bio');
@@ -136,9 +159,14 @@ const createListing = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Only admins can set verified' });
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'featured') && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Only admins can set featured' });
+    }
+
     const payload = { ...req.body };
     if (req.user.role !== 'admin') {
       delete payload.verified;
+      delete payload.featured;
     }
 
     const listing = await Listing.create({
@@ -162,11 +190,16 @@ const updateListing = async (req, res, next) => {
 
     const isOwner = String(listing.sellerId) === String(req.user._id);
     const isAdmin = req.user.role === 'admin';
-    const { verified, ...rest } = req.body;
+    const { verified, featured, ...rest } = req.body;
     const hasVerified = Object.prototype.hasOwnProperty.call(req.body, 'verified');
+    const hasFeatured = Object.prototype.hasOwnProperty.call(req.body, 'featured');
 
     if (hasVerified && !isAdmin) {
       return res.status(403).json({ success: false, message: 'Only admins can set verified' });
+    }
+
+    if (hasFeatured && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Only admins can set featured' });
     }
 
     if (!isOwner && !isAdmin) {
@@ -178,13 +211,18 @@ const updateListing = async (req, res, next) => {
       if (otherKeys.length > 0) {
         return res.status(403).json({
           success: false,
-          message: 'Admins may only update verified on listings they do not own'
+          message: 'Admins may only update verified or featured on listings they do not own'
         });
       }
-      if (!hasVerified) {
+      if (!hasVerified && !hasFeatured) {
         return res.status(400).json({ success: false, message: 'No updatable fields' });
       }
-      listing.verified = verified;
+      if (hasVerified) {
+        listing.verified = verified;
+      }
+      if (hasFeatured) {
+        listing.featured = featured;
+      }
       await listing.save();
       return res.json({ success: true, listing });
     }
@@ -192,6 +230,9 @@ const updateListing = async (req, res, next) => {
     const payload = { ...rest };
     if (isAdmin && hasVerified) {
       payload.verified = verified;
+    }
+    if (isAdmin && hasFeatured) {
+      payload.featured = featured;
     }
 
     Object.assign(listing, payload);
@@ -335,6 +376,7 @@ const uploadListingAssets = async (req, res, next) => {
 module.exports = {
   upload,
   listListings,
+  listFeaturedListings,
   getListingById,
   createListing,
   updateListing,

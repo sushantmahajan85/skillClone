@@ -19,9 +19,31 @@ const PORT = process.env.PORT || 5000;
 
 connectDB();
 
+const parseOrigins = (value) =>
+  String(value || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const allowedOrigins = new Set([
+  ...parseOrigins(process.env.CORS_ORIGINS),
+  ...parseOrigins(process.env.FRONTEND_URLS),
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : [])
+]);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.has(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(null, false);
+    },
     credentials: true
   })
 );
@@ -38,6 +60,10 @@ app.use((req, res, next) => {
 
 app.use(passport.initialize());
 require('./src/config/passport');
+
+app.get('/health', (req, res) => {
+  res.json({ ok: true });
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingsRoutes);

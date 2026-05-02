@@ -22,6 +22,7 @@ const listingSchema = new mongoose.Schema(
     coverImageUrl: { type: String },
     tags: { type: [String], default: [] },
     verified: { type: Boolean, default: false, index: true },
+    featured: { type: Boolean, default: false, index: true },
     status: { type: String, enum: ['draft', 'pending-review', 'active', 'suspended'], default: 'draft' },
     averageRating: { type: Number, default: 0 },
     reviewCount: { type: Number, default: 0 }
