@@ -58,20 +58,7 @@ const isZipUpload = (file) => {
 
 const listListings = async (req, res, next) => {
   try {
-    const {
-      q,
-      category,
-      pricingModel,
-      interfaceType,
-      llmCompatibility,
-      verified,
-      minRating,
-      minPrice,
-      maxPrice,
-      sortBy = 'newest',
-      page = 1,
-      limit = 20
-    } = req.query;
+    const { q, sortBy = 'newest', page = 1, limit = 20 } = req.query;
 
     const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
     const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
@@ -79,59 +66,19 @@ const listListings = async (req, res, next) => {
     const query = { status: 'active' };
 
     if (q) {
-      query.$or = [
-        { title: { $regex: q, $options: 'i' } },
-        { shortDescription: { $regex: q, $options: 'i' } }
-      ];
-    }
-
-    if (category) {
-      query.category = category;
-    }
-
-    if (pricingModel) {
-      query.pricingModel = pricingModel;
-    }
-
-    if (interfaceType) {
-      query.interfaceType = interfaceType;
-    }
-
-    if (llmCompatibility) {
-      const values = Array.isArray(llmCompatibility)
-        ? llmCompatibility
-        : String(llmCompatibility)
-            .split(',')
-            .map((val) => val.trim())
-            .filter(Boolean);
+      const values = String(q)
+        .split(',')
+        .map((val) => val.trim())
+        .filter(Boolean);
 
       if (values.length > 0) {
-        query.llmCompatibility = { $in: values };
-      }
-    }
-
-    if (verified !== undefined) {
-      if (String(verified).toLowerCase() === 'true') {
-        query.verified = true;
-      } else if (String(verified).toLowerCase() === 'false') {
-        query.verified = false;
-      }
-    }
-
-    if (minPrice || maxPrice) {
-      query.price = {};
-      if (minPrice !== undefined) {
-        query.price.$gte = Number(minPrice);
-      }
-      if (maxPrice !== undefined) {
-        query.price.$lte = Number(maxPrice);
-      }
-    }
-
-    if (minRating !== undefined && minRating !== '') {
-      const parsedMinRating = Number(minRating);
-      if (!Number.isNaN(parsedMinRating)) {
-        query.averageRating = { $gte: parsedMinRating };
+        const regex = new RegExp(values.join('|'), 'i');
+        query.$or = [
+          { tags: { $in: values } },
+          { title: { $regex: regex } },
+          { shortDescription: { $regex: regex } },
+          { description: { $regex: regex } }
+        ];
       }
     }
 

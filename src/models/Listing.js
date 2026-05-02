@@ -1,4 +1,9 @@
+const crypto = require('crypto');
 const mongoose = require('mongoose');
+
+const generateListingHashId = () => {
+  return `0x${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+};
 
 const listingSchema = new mongoose.Schema(
   {
@@ -6,16 +11,11 @@ const listingSchema = new mongoose.Schema(
     description: { type: String, required: true },
     shortDescription: { type: String, required: true, trim: true },
     sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    category: {
-      type: String,
-      enum: ['data-retrieval', 'code-generation', 'web-browsing', 'file-processing', 'api-connector', 'workflow'],
-      required: true
-    },
     price: { type: Number, required: true, min: 0 },
-    pricingModel: { type: String, enum: ['one-time', 'subscription', 'per-use'], required: true },
+    pricingModel: { type: String, enum: ['one-time'], default: 'one-time', required: true },
     llmCompatibility: { type: [String], default: [] },
-    interfaceType: { type: String, enum: ['openai-tool', 'mcp', 'both'], required: true },
     fileUrl: { type: String },
+    listingHashId: { type: String, unique: true, index: true },
     fileSizeBytes: { type: Number, min: 0, default: 0 },
     packageZipUrl: { type: String },
     packageManifest: { type: mongoose.Schema.Types.Mixed },
@@ -28,5 +28,24 @@ const listingSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+listingSchema.pre('validate', async function preValidate(next) {
+  if (this.listingHashId) {
+    return next();
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = generateListingHashId();
+    // Avoid duplicate collisions before save.
+    // eslint-disable-next-line no-await-in-loop
+    const exists = await this.constructor.exists({ listingHashId: candidate });
+    if (!exists) {
+      this.listingHashId = candidate;
+      return next();
+    }
+  }
+
+  return next(new Error('Could not generate unique listing hash id'));
+});
 
 module.exports = mongoose.model('Listing', listingSchema);
