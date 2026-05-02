@@ -10,7 +10,7 @@ const router = express.Router();
 const createListingSchema = Joi.object({
   title: Joi.string().trim().required(),
   description: Joi.string().required(),
-  shortDescription: Joi.string().trim().required(),
+  shortDescription: Joi.string().trim().allow('').optional(),
   price: Joi.number().integer().min(0).required(),
   pricingModel: Joi.string().valid('one-time').default('one-time'),
   llmCompatibility: Joi.array().items(Joi.string()).default([]),

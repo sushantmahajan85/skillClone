@@ -9,7 +9,7 @@ const listingSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
-    shortDescription: { type: String, required: true, trim: true },
+    shortDescription: { type: String, trim: true, default: '' },
     sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     price: { type: Number, required: true, min: 0 },
     pricingModel: { type: String, enum: ['one-time'], default: 'one-time', required: true },
