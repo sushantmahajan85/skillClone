@@ -1,10 +1,32 @@
 const multer = require('multer');
 const { Readable } = require('stream');
+const AdmZip = require('adm-zip');
 
 const Listing = require('../models/Listing');
 const cloudinary = require('../config/cloudinary');
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+const MAX_PACKAGE_ZIP_BYTES = 50 * 1024 * 1024;
+const MAX_UNCOMPRESSED_TOTAL_BYTES = 100 * 1024 * 1024;
+const MAX_PACKAGE_FILES = 500;
+
+const normalizeEntryPath = (entryName) =>
+  String(entryName || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/(\.\.\/)+/g, '');
+
+const inferResourceType = (relativePath) => {
+  const lower = relativePath.toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|svg|ico)$/i.test(lower)) {
+    return 'image';
+  }
+  if (/\.(mp4|webm|mov)$/i.test(lower)) {
+    return 'video';
+  }
+  return 'raw';
+};
 
 const uploadToCloudinary = (fileBuffer, folder, resourceType = 'auto') => {
   return new Promise((resolve, reject) => {
@@ -23,6 +45,15 @@ const uploadToCloudinary = (fileBuffer, folder, resourceType = 'auto') => {
 
     Readable.from(fileBuffer).pipe(uploadStream);
   });
+};
+
+const isZipUpload = (file) => {
+  if (!file) {
+    return false;
+  }
+  const name = (file.originalname || '').toLowerCase();
+  const mime = (file.mimetype || '').toLowerCase();
+  return name.endsWith('.zip') || mime === 'application/zip' || mime === 'application/x-zip-compressed';
 };
 
 const listListings = async (req, res, next) => {
@@ -259,9 +290,86 @@ const uploadListingAssets = async (req, res, next) => {
     }
 
     if (req.files && req.files.skillFile && req.files.skillFile[0]) {
-      const fileResult = await uploadToCloudinary(req.files.skillFile[0].buffer, 'skill-marketplace/files', 'raw');
-      listing.fileUrl = fileResult.secure_url;
-      listing.fileSizeBytes = req.files.skillFile[0].size || listing.fileSizeBytes;
+      const skillFile = req.files.skillFile[0];
+
+      if (isZipUpload(skillFile)) {
+        const zipSize = skillFile.size || skillFile.buffer.length;
+        if (zipSize > MAX_PACKAGE_ZIP_BYTES) {
+          return res.status(400).json({
+            success: false,
+            message: `Package zip must be ${MAX_PACKAGE_ZIP_BYTES / (1024 * 1024)}MB or smaller`
+          });
+        }
+
+        const zipUpload = await uploadToCloudinary(
+          skillFile.buffer,
+          `skill-marketplace/packages/${listing._id}/bundle`,
+          'raw'
+        );
+
+        const zip = new AdmZip(skillFile.buffer);
+        const entries = zip.getEntries();
+        const files = [];
+        let totalUncompressed = 0;
+
+        for (const entry of entries) {
+          if (entry.isDirectory) {
+            continue;
+          }
+
+          const relativePath = normalizeEntryPath(entry.entryName);
+          if (!relativePath || relativePath.endsWith('/')) {
+            continue;
+          }
+
+          const data = entry.getData();
+          totalUncompressed += data.length;
+          if (totalUncompressed > MAX_UNCOMPRESSED_TOTAL_BYTES) {
+            return res.status(400).json({
+              success: false,
+              message: 'Unpacked package exceeds maximum allowed size'
+            });
+          }
+
+          if (files.length >= MAX_PACKAGE_FILES) {
+            return res.status(400).json({
+              success: false,
+              message: `Package contains too many files (max ${MAX_PACKAGE_FILES})`
+            });
+          }
+
+          const resourceType = inferResourceType(relativePath);
+          const uploaded = await uploadToCloudinary(
+            data,
+            `skill-marketplace/packages/${listing._id}/files/${relativePath}`,
+            resourceType
+          );
+
+          files.push({
+            path: relativePath,
+            url: uploaded.secure_url,
+            bytes: data.length,
+            resourceType
+          });
+        }
+
+        listing.packageZipUrl = zipUpload.secure_url;
+        listing.fileUrl = zipUpload.secure_url;
+        listing.fileSizeBytes = zipSize;
+        listing.packageManifest = {
+          version: 1,
+          uploadedAt: new Date().toISOString(),
+          fileCount: files.length,
+          totalUncompressedBytes: totalUncompressed,
+          files
+        };
+      } else {
+        const fileResult = await uploadToCloudinary(skillFile.buffer, 'skill-marketplace/files', 'raw');
+        listing.fileUrl = fileResult.secure_url;
+        listing.fileSizeBytes = skillFile.size || listing.fileSizeBytes;
+        listing.packageZipUrl = null;
+        listing.packageManifest = null;
+      }
     }
 
     if (req.files && req.files.coverImage && req.files.coverImage[0]) {
