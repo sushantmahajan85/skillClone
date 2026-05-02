@@ -19,31 +19,9 @@ const PORT = process.env.PORT || 5000;
 
 connectDB();
 
-const parseOrigins = (value) =>
-  String(value || '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-const allowedOrigins = new Set([
-  ...parseOrigins(process.env.CORS_ORIGINS),
-  ...parseOrigins(process.env.FRONTEND_URLS),
-  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : [])
-]);
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.has(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(null, false);
-    },
+    origin: true,
     credentials: true
   })
 );
