@@ -33,6 +33,7 @@ const listListings = async (req, res, next) => {
       pricingModel,
       interfaceType,
       llmCompatibility,
+      verified,
       minPrice,
       maxPrice,
       sortBy = 'newest',
@@ -74,6 +75,14 @@ const listListings = async (req, res, next) => {
 
       if (values.length > 0) {
         query.llmCompatibility = { $in: values };
+      }
+    }
+
+    if (verified !== undefined) {
+      if (String(verified).toLowerCase() === 'true') {
+        query.verified = true;
+      } else if (String(verified).toLowerCase() === 'false') {
+        query.verified = false;
       }
     }
 
@@ -136,8 +145,17 @@ const createListing = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Only active sellers can create listings' });
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'verified') && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Only admins can set verified' });
+    }
+
+    const payload = { ...req.body };
+    if (req.user.role !== 'admin') {
+      delete payload.verified;
+    }
+
     const listing = await Listing.create({
-      ...req.body,
+      ...payload,
       sellerId: req.user._id
     });
 
@@ -155,11 +173,41 @@ const updateListing = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Listing not found' });
     }
 
-    if (String(listing.sellerId) !== String(req.user._id)) {
+    const isOwner = String(listing.sellerId) === String(req.user._id);
+    const isAdmin = req.user.role === 'admin';
+    const { verified, ...rest } = req.body;
+    const hasVerified = Object.prototype.hasOwnProperty.call(req.body, 'verified');
+
+    if (hasVerified && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Only admins can set verified' });
+    }
+
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ success: false, message: 'Not authorized to update this listing' });
     }
 
-    Object.assign(listing, req.body);
+    if (isAdmin && !isOwner) {
+      const otherKeys = Object.keys(rest);
+      if (otherKeys.length > 0) {
+        return res.status(403).json({
+          success: false,
+          message: 'Admins may only update verified on listings they do not own'
+        });
+      }
+      if (!hasVerified) {
+        return res.status(400).json({ success: false, message: 'No updatable fields' });
+      }
+      listing.verified = verified;
+      await listing.save();
+      return res.json({ success: true, listing });
+    }
+
+    const payload = { ...rest };
+    if (isAdmin && hasVerified) {
+      payload.verified = verified;
+    }
+
+    Object.assign(listing, payload);
     await listing.save();
 
     return res.json({ success: true, listing });

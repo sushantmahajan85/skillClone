@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema(
     avatarUrl: { type: String },
     passwordHash: { type: String },
     authProvider: { type: String, enum: ['local', 'google'], required: true },
-    role: { type: String, enum: ['buyer', 'seller', 'both'], default: 'buyer' },
+    role: { type: String, enum: ['buyer', 'seller', 'both', 'admin'], default: 'buyer' },
     sellerStatus: { type: String, enum: ['none', 'pending', 'active'], default: 'none' },
     dodopaymentsMerchantId: { type: String, index: true },
     bio: { type: String }

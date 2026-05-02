@@ -19,6 +19,7 @@ const createListingSchema = Joi.object({
   llmCompatibility: Joi.array().items(Joi.string()).default([]),
   interfaceType: Joi.string().valid('openai-tool', 'mcp', 'both').required(),
   tags: Joi.array().items(Joi.string()).default([]),
+  verified: Joi.boolean().optional(),
   status: Joi.string().valid('draft', 'pending-review', 'active', 'suspended').optional(),
   fileUrl: Joi.string().uri().optional(),
   coverImageUrl: Joi.string().uri().optional()
@@ -34,6 +35,7 @@ const updateListingSchema = Joi.object({
   llmCompatibility: Joi.array().items(Joi.string()),
   interfaceType: Joi.string().valid('openai-tool', 'mcp', 'both'),
   tags: Joi.array().items(Joi.string()),
+  verified: Joi.boolean(),
   status: Joi.string().valid('draft', 'pending-review', 'active', 'suspended'),
   fileUrl: Joi.string().uri(),
   coverImageUrl: Joi.string().uri()
