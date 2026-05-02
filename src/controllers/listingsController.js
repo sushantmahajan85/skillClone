@@ -57,6 +57,14 @@ const isZipUpload = (file) => {
   return name.endsWith('.zip') || mime === 'application/zip' || mime === 'application/x-zip-compressed';
 };
 
+/** Ensures multer file.originalname ends with `.zip` when we handle it as a zip (MIME-only uploads, etc.). */
+const ensureZipFilename = (file) => {
+  const base = String(file.originalname || 'package').trim() || 'package';
+  if (!base.toLowerCase().endsWith('.zip')) {
+    file.originalname = `${base}.zip`;
+  }
+};
+
 const LISTING_FILE_FIELDS = ['fileUrl', 'fileSizeBytes', 'packageZipUrl', 'packageManifest'];
 
 /** Plain listing JSON with download/package fields removed (for buyers who have not purchased). */
@@ -332,6 +340,7 @@ const uploadListingAssets = async (req, res, next) => {
       const skillFile = req.files.skillFile[0];
 
       if (isZipUpload(skillFile)) {
+        ensureZipFilename(skillFile);
         const zipSize = skillFile.size || skillFile.buffer.length;
         if (zipSize > MAX_PACKAGE_ZIP_BYTES) {
           return res.status(400).json({
