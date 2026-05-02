@@ -3,6 +3,7 @@ const { Readable } = require('stream');
 const AdmZip = require('adm-zip');
 
 const Listing = require('../models/Listing');
+const Transaction = require('../models/Transaction');
 const cloudinary = require('../config/cloudinary');
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -55,6 +56,28 @@ const isZipUpload = (file) => {
   const mime = (file.mimetype || '').toLowerCase();
   return name.endsWith('.zip') || mime === 'application/zip' || mime === 'application/x-zip-compressed';
 };
+
+const LISTING_FILE_FIELDS = ['fileUrl', 'fileSizeBytes', 'packageZipUrl', 'packageManifest'];
+
+/** Plain listing JSON with download/package fields removed (for buyers who have not purchased). */
+const listingWithoutDownloadAssets = (listing) => {
+  const plain = listing.toObject ? listing.toObject() : { ...listing };
+  for (const key of LISTING_FILE_FIELDS) {
+    delete plain[key];
+  }
+  return plain;
+};
+
+const formatBuyerTransaction = (tx) => ({
+  _id: tx._id,
+  amount: tx.amount,
+  platformFee: tx.platformFee,
+  sellerPayout: tx.sellerPayout,
+  status: tx.status,
+  dodoPaymentId: tx.dodoPaymentId,
+  dodoTransferId: tx.dodoTransferId,
+  createdAt: tx.createdAt
+});
 
 const listListings = async (req, res, next) => {
   try {
@@ -143,7 +166,39 @@ const getListingById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Listing not found' });
     }
 
-    return res.json({ success: true, listing });
+    const user = req.user;
+    const sellerRef = listing.sellerId;
+    const sellerIdStr = String(sellerRef && sellerRef._id ? sellerRef._id : sellerRef);
+    const isSeller = user && String(user._id) === sellerIdStr;
+    const isAdmin = user && user.role === 'admin';
+
+    if (isSeller || isAdmin) {
+      return res.json({ success: true, listing });
+    }
+
+    let purchase = null;
+    if (user) {
+      purchase = await Transaction.findOne({
+        listingId: listing._id,
+        buyerId: user._id,
+        status: 'completed'
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    if (purchase) {
+      return res.json({
+        success: true,
+        listing: listing.toObject(),
+        transaction: formatBuyerTransaction(purchase)
+      });
+    }
+
+    return res.json({
+      success: true,
+      listing: listingWithoutDownloadAssets(listing)
+    });
   } catch (error) {
     return next(error);
   }

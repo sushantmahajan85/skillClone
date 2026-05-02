@@ -2,6 +2,7 @@ const express = require('express');
 const Joi = require('joi');
 
 const auth = require('../middleware/auth');
+const optionalAuth = require('../middleware/optionalAuth');
 const validate = require('../middleware/validate');
 const listingsController = require('../controllers/listingsController');
 
@@ -46,7 +47,7 @@ const updateListingSchema = Joi.object({
 
 router.get('/', listingsController.listListings);
 router.get('/featured', listingsController.listFeaturedListings);
-router.get('/:id', listingsController.getListingById);
+router.get('/:id', optionalAuth, listingsController.getListingById);
 router.post('/', auth, validate(createListingSchema), listingsController.createListing);
 router.patch('/:id', auth, validate(updateListingSchema), listingsController.updateListing);
 router.delete('/:id', auth, listingsController.deleteListing);
