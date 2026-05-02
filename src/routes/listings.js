@@ -7,6 +7,11 @@ const listingsController = require('../controllers/listingsController');
 
 const router = express.Router();
 
+/** Maps legacy publish value `pending-review` to `active` (no review queue for now). */
+const listingStatusSchema = Joi.string()
+  .valid('draft', 'pending-review', 'active', 'suspended')
+  .custom((value) => (value === 'pending-review' ? 'active' : value));
+
 const createListingSchema = Joi.object({
   title: Joi.string().trim().required(),
   description: Joi.string().required(),
@@ -17,7 +22,7 @@ const createListingSchema = Joi.object({
   tags: Joi.array().items(Joi.string()).default([]),
   verified: Joi.boolean().optional(),
   featured: Joi.boolean().optional(),
-  status: Joi.string().valid('draft', 'pending-review', 'active', 'suspended').optional(),
+  status: listingStatusSchema.optional(),
   fileUrl: Joi.string().uri().optional(),
   fileSizeBytes: Joi.number().integer().min(0).optional(),
   coverImageUrl: Joi.string().uri().optional()
@@ -33,7 +38,7 @@ const updateListingSchema = Joi.object({
   tags: Joi.array().items(Joi.string()),
   verified: Joi.boolean(),
   featured: Joi.boolean(),
-  status: Joi.string().valid('draft', 'pending-review', 'active', 'suspended'),
+  status: listingStatusSchema,
   fileUrl: Joi.string().uri(),
   fileSizeBytes: Joi.number().integer().min(0),
   coverImageUrl: Joi.string().uri()
