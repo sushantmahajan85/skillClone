@@ -34,6 +34,7 @@ const listListings = async (req, res, next) => {
       interfaceType,
       llmCompatibility,
       verified,
+      minRating,
       minPrice,
       maxPrice,
       sortBy = 'newest',
@@ -96,6 +97,13 @@ const listListings = async (req, res, next) => {
       }
     }
 
+    if (minRating !== undefined && minRating !== '') {
+      const parsedMinRating = Number(minRating);
+      if (!Number.isNaN(parsedMinRating)) {
+        query.averageRating = { $gte: parsedMinRating };
+      }
+    }
+
     const sortMap = {
       newest: { createdAt: -1 },
       price_asc: { price: 1 },
@@ -107,6 +115,7 @@ const listListings = async (req, res, next) => {
 
     const [listings, total] = await Promise.all([
       Listing.find(query)
+        .populate('sellerId', 'name avatarUrl')
         .sort(sort)
         .skip((parsedPage - 1) * parsedLimit)
         .limit(parsedLimit),
@@ -252,6 +261,7 @@ const uploadListingAssets = async (req, res, next) => {
     if (req.files && req.files.skillFile && req.files.skillFile[0]) {
       const fileResult = await uploadToCloudinary(req.files.skillFile[0].buffer, 'skill-marketplace/files', 'raw');
       listing.fileUrl = fileResult.secure_url;
+      listing.fileSizeBytes = req.files.skillFile[0].size || listing.fileSizeBytes;
     }
 
     if (req.files && req.files.coverImage && req.files.coverImage[0]) {

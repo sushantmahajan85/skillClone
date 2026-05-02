@@ -16,6 +16,7 @@ const listingSchema = new mongoose.Schema(
     llmCompatibility: { type: [String], default: [] },
     interfaceType: { type: String, enum: ['openai-tool', 'mcp', 'both'], required: true },
     fileUrl: { type: String },
+    fileSizeBytes: { type: Number, min: 0, default: 0 },
     coverImageUrl: { type: String },
     tags: { type: [String], default: [] },
     verified: { type: Boolean, default: false, index: true },

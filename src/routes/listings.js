@@ -22,6 +22,7 @@ const createListingSchema = Joi.object({
   verified: Joi.boolean().optional(),
   status: Joi.string().valid('draft', 'pending-review', 'active', 'suspended').optional(),
   fileUrl: Joi.string().uri().optional(),
+  fileSizeBytes: Joi.number().integer().min(0).optional(),
   coverImageUrl: Joi.string().uri().optional()
 });
 
@@ -38,6 +39,7 @@ const updateListingSchema = Joi.object({
   verified: Joi.boolean(),
   status: Joi.string().valid('draft', 'pending-review', 'active', 'suspended'),
   fileUrl: Joi.string().uri(),
+  fileSizeBytes: Joi.number().integer().min(0),
   coverImageUrl: Joi.string().uri()
 }).min(1);
 
