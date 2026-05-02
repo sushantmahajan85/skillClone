@@ -151,10 +151,6 @@ const getListingById = async (req, res, next) => {
 
 const createListing = async (req, res, next) => {
   try {
-    if (req.user.sellerStatus !== 'active') {
-      return res.status(403).json({ success: false, message: 'Only active sellers can create listings' });
-    }
-
     if (Object.prototype.hasOwnProperty.call(req.body, 'verified') && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Only admins can set verified' });
     }
