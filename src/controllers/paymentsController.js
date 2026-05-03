@@ -111,8 +111,17 @@ const webhook = async (req, res, next) => {
 
 const getSellerDashboard = async (req, res, next) => {
   try {
-    if (!['seller', 'both'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, message: 'Seller access required' });
+    const isSeller =
+      ['seller', 'both', 'admin'].includes(req.user.role) ||
+      req.user.sellerStatus === 'active';
+
+    if (!isSeller) {
+      // Also allow if user has published any listings (role may not have been
+      // upgraded yet due to an interrupted onboarding flow).
+      const hasListing = await Listing.exists({ sellerId: req.user._id });
+      if (!hasListing) {
+        return res.status(403).json({ success: false, message: 'Seller access required' });
+      }
     }
 
     const sellerId = req.user._id;
