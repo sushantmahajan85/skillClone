@@ -2,21 +2,36 @@ const mongoose = require('mongoose');
 
 const transactionSchema = new mongoose.Schema(
   {
-    listingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Listing', required: true },
-    buyerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    amount: { type: Number, required: true },
-    platformFee: { type: Number, required: true },
-    sellerPayout: { type: Number, required: true },
+    /** 'purchase' = buyer → seller sale; 'withdrawal' = seller cashing out */
+    type: {
+      type: String,
+      enum: ['purchase', 'withdrawal'],
+      default: 'purchase',
+      index: true
+    },
+    // ── Purchase-only fields (undefined for withdrawals) ──────────────────
+    listingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Listing' },
+    buyerId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    platformFee:   { type: Number },
+    sellerPayout:  { type: Number },
     dodoPaymentId: { type: String },
-    dodoTransferId: { type: String },
-    status: { type: String, enum: ['pending', 'completed', 'refunded'], default: 'pending' }
+    dodoTransferId:{ type: String },
+    // ── Withdrawal-only fields (undefined for purchases) ──────────────────
+    /** Snapshot of payout/bank details provided at withdrawal time */
+    bankDetails: { type: mongoose.Schema.Types.Mixed },
+    // ── Shared fields ─────────────────────────────────────────────────────
+    sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    /** Amount in cents */
+    amount: { type: Number, required: true },
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'refunded', 'failed'],
+      default: 'pending',
+      index: true
+    }
   },
   {
-    timestamps: {
-      createdAt: true,
-      updatedAt: false
-    }
+    timestamps: { createdAt: true, updatedAt: false }
   }
 );
 

@@ -1,7 +1,6 @@
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
-const Withdrawal = require('../models/Withdrawal');
 const dodoPayments = require('../config/dodopayments');
 
 /** Minimum withdrawal amount in cents ($30.00). */
@@ -120,17 +119,20 @@ const getSellerDashboard = async (req, res, next) => {
 
     const sellerId = req.user._id;
 
-    const [earningsTotals, completedTransactions, listingBreakdown, withdrawnTotals] =
+    const [earningsTotals, completedTransactions, listingBreakdown, withdrawnTotals, withdrawalHistory] =
       await Promise.all([
+        // Total earned from completed sales
         Transaction.aggregate([
-          { $match: { sellerId, status: 'completed' } },
+          { $match: { sellerId, type: 'purchase', status: 'completed' } },
           { $group: { _id: null, totalEarnings: { $sum: '$sellerPayout' } } }
         ]),
-        Transaction.find({ sellerId, status: 'completed' })
+        // List of completed purchase transactions
+        Transaction.find({ sellerId, type: 'purchase', status: 'completed' })
           .sort({ createdAt: -1 })
           .populate('listingId', 'title'),
+        // Per-listing breakdown
         Transaction.aggregate([
-          { $match: { sellerId, status: 'completed' } },
+          { $match: { sellerId, type: 'purchase', status: 'completed' } },
           {
             $group: {
               _id: '$listingId',
@@ -157,11 +159,15 @@ const getSellerDashboard = async (req, res, next) => {
             }
           }
         ]),
-        // Sum withdrawals that are pending/processing/completed (not failed)
-        Withdrawal.aggregate([
-          { $match: { sellerId, status: { $in: ['pending', 'processing', 'completed'] } } },
+        // Sum of non-failed withdrawals (counts against available balance)
+        Transaction.aggregate([
+          { $match: { sellerId, type: 'withdrawal', status: { $in: ['pending', 'completed'] } } },
           { $group: { _id: null, totalWithdrawn: { $sum: '$amount' } } }
-        ])
+        ]),
+        // Withdrawal history sorted newest first
+        Transaction.find({ sellerId, type: 'withdrawal' })
+          .sort({ createdAt: -1 })
+          .lean()
       ]);
 
     const totalEarnings = (earningsTotals[0] || {}).totalEarnings || 0;
@@ -174,7 +180,8 @@ const getSellerDashboard = async (req, res, next) => {
       totalEarnings,
       pendingPayouts,
       completedTransactions,
-      listingBreakdown
+      listingBreakdown,
+      withdrawalHistory
     });
   } catch (error) {
     return next(error);
@@ -201,11 +208,11 @@ const withdraw = async (req, res, next) => {
     // Calculate current available balance
     const [earningsRes, withdrawnRes] = await Promise.all([
       Transaction.aggregate([
-        { $match: { sellerId, status: 'completed' } },
+        { $match: { sellerId, type: 'purchase', status: 'completed' } },
         { $group: { _id: null, total: { $sum: '$sellerPayout' } } }
       ]),
-      Withdrawal.aggregate([
-        { $match: { sellerId, status: { $in: ['pending', 'processing', 'completed'] } } },
+      Transaction.aggregate([
+        { $match: { sellerId, type: 'withdrawal', status: { $in: ['pending', 'completed'] } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
     ]);
@@ -221,14 +228,15 @@ const withdraw = async (req, res, next) => {
       });
     }
 
-    const withdrawal = await Withdrawal.create({
+    const transaction = await Transaction.create({
+      type: 'withdrawal',
       sellerId,
       amount: amountCents,
       bankDetails: bankDetails || {},
       status: 'pending'
     });
 
-    return res.json({ success: true, withdrawal });
+    return res.json({ success: true, withdrawal: transaction });
   } catch (error) {
     return next(error);
   }
