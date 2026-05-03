@@ -20,6 +20,16 @@ const listingSchema = new mongoose.Schema(
     packageZipUrl: { type: String },
     packageManifest: { type: mongoose.Schema.Types.Mixed },
     coverImageUrl: { type: String },
+    demoMedia: {
+      type: [
+        {
+          url: { type: String, required: true },
+          resourceType: { type: String, default: 'image' },
+          name: { type: String, default: '' }
+        }
+      ],
+      default: []
+    },
     tags: { type: [String], default: [] },
     categories: { type: [String], default: [] },
     purchaseCount: { type: Number, default: 0, min: 0 },

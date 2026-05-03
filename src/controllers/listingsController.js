@@ -466,6 +466,24 @@ const uploadListingAssets = async (req, res, next) => {
       listing.coverImageUrl = imageResult.secure_url;
     }
 
+    if (req.files && req.files.demoMedia && req.files.demoMedia.length > 0) {
+      const demoResults = await Promise.all(
+        req.files.demoMedia.map((file) => {
+          const resourceType = inferResourceType(file.originalname);
+          return uploadToCloudinary(
+            file.buffer,
+            `skill-marketplace/demo/${listing._id}`,
+            resourceType
+          ).then((result) => ({
+            url: result.secure_url,
+            resourceType: result.resource_type || resourceType,
+            name: file.originalname
+          }));
+        })
+      );
+      listing.demoMedia = demoResults;
+    }
+
     await listing.save();
 
     return res.json({ success: true, listing });

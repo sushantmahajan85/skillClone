@@ -59,7 +59,8 @@ router.post(
   auth,
   listingsController.upload.fields([
     { name: 'skillFile', maxCount: 1 },
-    { name: 'coverImage', maxCount: 1 }
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'demoMedia', maxCount: 10 }
   ]),
   listingsController.uploadListingAssets
 );
