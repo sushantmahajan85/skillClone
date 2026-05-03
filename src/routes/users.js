@@ -12,6 +12,8 @@ const updateMeSchema = Joi.object({
   bio: Joi.string().max(2000).allow('').optional()
 }).min(1);
 
+router.get('/me/purchases', auth, usersController.getMyPurchases);
+router.get('/me/listings', auth, usersController.getMyListings);
 router.get('/:id/public', usersController.getPublicProfile);
 router.patch('/me', auth, validate(updateMeSchema), usersController.updateMe);
 router.post('/me/become-seller', auth, usersController.becomeSeller);

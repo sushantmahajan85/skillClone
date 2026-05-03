@@ -21,6 +21,8 @@ const listingSchema = new mongoose.Schema(
     packageManifest: { type: mongoose.Schema.Types.Mixed },
     coverImageUrl: { type: String },
     tags: { type: [String], default: [] },
+    categories: { type: [String], default: [] },
+    purchaseCount: { type: Number, default: 0, min: 0 },
     verified: { type: Boolean, default: false, index: true },
     featured: { type: Boolean, default: false, index: true },
     status: { type: String, enum: ['draft', 'pending-review', 'active', 'suspended'], default: 'draft' },

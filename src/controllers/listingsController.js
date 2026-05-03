@@ -103,9 +103,28 @@ const formatBuyerTransaction = (tx) => ({
   createdAt: tx.createdAt
 });
 
+const CATEGORIES = [
+  { slug: 'content-writing', label: 'Content Writing' },
+  { slug: 'seo-growth', label: 'SEO & Growth' },
+  { slug: 'data-analysis', label: 'Data Analysis' },
+  { slug: 'coding-dev', label: 'Coding & Dev' },
+  { slug: 'image-video', label: 'Image & Video' },
+  { slug: 'research', label: 'Research' },
+  { slug: 'productivity', label: 'Productivity' },
+  { slug: 'social-media', label: 'Social Media' },
+  { slug: 'customer-support', label: 'Customer Support' },
+  { slug: 'finance', label: 'Finance' },
+  { slug: 'legal', label: 'Legal' },
+  { slug: 'education', label: 'Education' }
+];
+
+const listCategories = async (req, res) => {
+  return res.json({ success: true, categories: CATEGORIES });
+};
+
 const listListings = async (req, res, next) => {
   try {
-    const { q, sortBy = 'newest', page = 1, limit = 20 } = req.query;
+    const { q, sortBy = 'newest', category, page = 1, limit = 20 } = req.query;
 
     const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
     const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
@@ -129,11 +148,16 @@ const listListings = async (req, res, next) => {
       }
     }
 
+    if (category) {
+      query.categories = category;
+    }
+
     const sortMap = {
       newest: { createdAt: -1 },
       price_asc: { price: 1 },
       price_desc: { price: -1 },
-      top_rated: { averageRating: -1 }
+      top_rated: { averageRating: -1 },
+      popular: { purchaseCount: -1 }
     };
 
     const sort = sortMap[sortBy] || sortMap.newest;
@@ -452,6 +476,7 @@ const uploadListingAssets = async (req, res, next) => {
 
 module.exports = {
   upload,
+  listCategories,
   listListings,
   listFeaturedListings,
   getListingById,

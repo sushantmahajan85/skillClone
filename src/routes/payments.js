@@ -11,6 +11,11 @@ const createCheckoutSchema = Joi.object({
   listingId: Joi.string().required()
 });
 
+const buySchema = Joi.object({
+  listingId: Joi.string().required()
+});
+
+router.post('/buy', auth, validate(buySchema), paymentsController.buy);
 router.post('/create-checkout', auth, validate(createCheckoutSchema), paymentsController.createCheckout);
 router.post('/webhook', paymentsController.webhook);
 router.get('/seller/dashboard', auth, paymentsController.getSellerDashboard);

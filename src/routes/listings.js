@@ -21,6 +21,7 @@ const createListingSchema = Joi.object({
   pricingModel: Joi.string().valid('one-time').default('one-time'),
   llmCompatibility: Joi.array().items(Joi.string()).default([]),
   tags: Joi.array().items(Joi.string()).default([]),
+  categories: Joi.array().items(Joi.string()).max(2).default([]),
   verified: Joi.boolean().optional(),
   featured: Joi.boolean().optional(),
   status: listingStatusSchema.optional(),
@@ -37,6 +38,7 @@ const updateListingSchema = Joi.object({
   pricingModel: Joi.string().valid('one-time'),
   llmCompatibility: Joi.array().items(Joi.string()),
   tags: Joi.array().items(Joi.string()),
+  categories: Joi.array().items(Joi.string()).max(2),
   verified: Joi.boolean(),
   featured: Joi.boolean(),
   status: listingStatusSchema,
@@ -45,6 +47,7 @@ const updateListingSchema = Joi.object({
   coverImageUrl: Joi.string().uri()
 }).min(1);
 
+router.get('/categories', listingsController.listCategories);
 router.get('/', listingsController.listListings);
 router.get('/featured', listingsController.listFeaturedListings);
 router.get('/:id', optionalAuth, listingsController.getListingById);

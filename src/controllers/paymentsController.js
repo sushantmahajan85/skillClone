@@ -181,8 +181,53 @@ const getSellerDashboard = async (req, res, next) => {
   }
 };
 
+const buy = async (req, res, next) => {
+  try {
+    const { listingId } = req.body;
+
+    const listing = await Listing.findById(listingId);
+    if (!listing || listing.status !== 'active') {
+      return res.status(404).json({ success: false, message: 'Listing not found or unavailable' });
+    }
+
+    if (String(listing.sellerId) === String(req.user._id)) {
+      return res.status(400).json({ success: false, message: 'You cannot purchase your own listing' });
+    }
+
+    const existing = await Transaction.findOne({
+      listingId: listing._id,
+      buyerId: req.user._id,
+      status: 'completed'
+    });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'You have already purchased this skill' });
+    }
+
+    const feePercent = Number(process.env.PLATFORM_FEE_PERCENT || 20);
+    const platformFee = Math.round((listing.price * feePercent) / 100);
+    const sellerPayout = listing.price - platformFee;
+
+    const transaction = await Transaction.create({
+      listingId: listing._id,
+      buyerId: req.user._id,
+      sellerId: listing.sellerId,
+      amount: listing.price,
+      platformFee,
+      sellerPayout,
+      status: 'completed'
+    });
+
+    await Listing.findByIdAndUpdate(listing._id, { $inc: { purchaseCount: 1 } });
+
+    return res.json({ success: true, transaction });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createCheckout,
+  buy,
   webhook,
   getSellerDashboard
 };
