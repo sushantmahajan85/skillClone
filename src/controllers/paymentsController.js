@@ -115,16 +115,8 @@ const webhook = async (req, res, next) => {
 
 const getSellerDashboard = async (req, res, next) => {
   try {
-    const isSeller =
-      ['seller', 'both', 'admin'].includes(req.user.role) ||
-      req.user.sellerStatus === 'active';
-
-    if (!isSeller) {
-      const hasListing = await Listing.exists({ sellerId: req.user._id });
-      if (!hasListing) {
-        return res.status(403).json({ success: false, message: 'Seller access required' });
-      }
-    }
+    // Any authenticated user can view their seller dashboard.
+    // If they have no listings/earnings the numbers are simply zero.
 
     const sellerId = req.user._id;
 
@@ -191,13 +183,6 @@ const getSellerDashboard = async (req, res, next) => {
 
 const withdraw = async (req, res, next) => {
   try {
-    const isSeller =
-      ['seller', 'both', 'admin'].includes(req.user.role) ||
-      req.user.sellerStatus === 'active';
-    if (!isSeller) {
-      return res.status(403).json({ success: false, message: 'Seller access required' });
-    }
-
     const { amount, bankDetails } = req.body;
     const amountCents = Math.round(Number(amount));
 
