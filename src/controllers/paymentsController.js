@@ -1,7 +1,11 @@
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const Withdrawal = require('../models/Withdrawal');
 const dodoPayments = require('../config/dodopayments');
+
+/** Minimum withdrawal amount in cents ($30.00). */
+const WITHDRAW_MIN_CENTS = 3000;
 
 const createCheckout = async (req, res, next) => {
   try {
@@ -116,8 +120,6 @@ const getSellerDashboard = async (req, res, next) => {
       req.user.sellerStatus === 'active';
 
     if (!isSeller) {
-      // Also allow if user has published any listings (role may not have been
-      // upgraded yet due to an interrupted onboarding flow).
       const hasListing = await Listing.exists({ sellerId: req.user._id });
       if (!hasListing) {
         return res.status(403).json({ success: false, message: 'Seller access required' });
@@ -126,65 +128,122 @@ const getSellerDashboard = async (req, res, next) => {
 
     const sellerId = req.user._id;
 
-    const [totals, completedTransactions, listingBreakdown] = await Promise.all([
-      Transaction.aggregate([
-        { $match: { sellerId } },
-        {
-          $group: {
-            _id: null,
-            totalEarnings: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'completed'] }, '$sellerPayout', 0]
-              }
-            },
-            pendingPayouts: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'pending'] }, '$sellerPayout', 0]
-              }
+    const [earningsTotals, completedTransactions, listingBreakdown, withdrawnTotals] =
+      await Promise.all([
+        Transaction.aggregate([
+          { $match: { sellerId, status: 'completed' } },
+          { $group: { _id: null, totalEarnings: { $sum: '$sellerPayout' } } }
+        ]),
+        Transaction.find({ sellerId, status: 'completed' })
+          .sort({ createdAt: -1 })
+          .populate('listingId', 'title'),
+        Transaction.aggregate([
+          { $match: { sellerId, status: 'completed' } },
+          {
+            $group: {
+              _id: '$listingId',
+              totalSales: { $sum: 1 },
+              totalEarnings: { $sum: '$sellerPayout' }
+            }
+          },
+          {
+            $lookup: {
+              from: 'listings',
+              localField: '_id',
+              foreignField: '_id',
+              as: 'listing'
+            }
+          },
+          { $unwind: '$listing' },
+          {
+            $project: {
+              _id: 0,
+              listingId: '$_id',
+              title: '$listing.title',
+              totalSales: 1,
+              totalEarnings: 1
             }
           }
-        }
-      ]),
-      Transaction.find({ sellerId, status: 'completed' }).sort({ createdAt: -1 }).populate('listingId', 'title'),
-      Transaction.aggregate([
-        { $match: { sellerId, status: 'completed' } },
-        {
-          $group: {
-            _id: '$listingId',
-            totalSales: { $sum: 1 },
-            totalEarnings: { $sum: '$sellerPayout' }
-          }
-        },
-        {
-          $lookup: {
-            from: 'listings',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'listing'
-          }
-        },
-        { $unwind: '$listing' },
-        {
-          $project: {
-            _id: 0,
-            listingId: '$_id',
-            title: '$listing.title',
-            totalSales: 1,
-            totalEarnings: 1
-          }
-        }
-      ])
-    ]);
+        ]),
+        // Sum withdrawals that are pending/processing/completed (not failed)
+        Withdrawal.aggregate([
+          { $match: { sellerId, status: { $in: ['pending', 'processing', 'completed'] } } },
+          { $group: { _id: null, totalWithdrawn: { $sum: '$amount' } } }
+        ])
+      ]);
 
-    const summary = totals[0] || { totalEarnings: 0, pendingPayouts: 0 };
+    const totalEarnings = (earningsTotals[0] || {}).totalEarnings || 0;
+    const totalWithdrawn = (withdrawnTotals[0] || {}).totalWithdrawn || 0;
+    // Pending payouts = money earned but not yet withdrawn
+    const pendingPayouts = Math.max(0, totalEarnings - totalWithdrawn);
 
     return res.json({
       success: true,
-      totalEarnings: summary.totalEarnings,
-      pendingPayouts: summary.pendingPayouts,
+      totalEarnings,
+      pendingPayouts,
       completedTransactions,
       listingBreakdown
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const withdraw = async (req, res, next) => {
+  try {
+    const isSeller =
+      ['seller', 'both', 'admin'].includes(req.user.role) ||
+      req.user.sellerStatus === 'active';
+    if (!isSeller) {
+      return res.status(403).json({ success: false, message: 'Seller access required' });
+    }
+
+    const { amount, bankDetails } = req.body;
+    const amountCents = Math.round(Number(amount));
+
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid withdrawal amount.' });
+    }
+    if (amountCents < WITHDRAW_MIN_CENTS) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum withdrawal is $${(WITHDRAW_MIN_CENTS / 100).toFixed(2)}.`
+      });
+    }
+
+    const sellerId = req.user._id;
+
+    // Calculate current available balance
+    const [earningsRes, withdrawnRes] = await Promise.all([
+      Transaction.aggregate([
+        { $match: { sellerId, status: 'completed' } },
+        { $group: { _id: null, total: { $sum: '$sellerPayout' } } }
+      ]),
+      Withdrawal.aggregate([
+        { $match: { sellerId, status: { $in: ['pending', 'processing', 'completed'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ])
+    ]);
+
+    const totalEarnings = (earningsRes[0] || {}).total || 0;
+    const totalWithdrawn = (withdrawnRes[0] || {}).total || 0;
+    const available = Math.max(0, totalEarnings - totalWithdrawn);
+
+    if (amountCents > available) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot exceed available balance of $${(available / 100).toFixed(2)}.`
+      });
+    }
+
+    const withdrawal = await Withdrawal.create({
+      sellerId,
+      amount: amountCents,
+      bankDetails: bankDetails || {},
+      status: 'pending'
+    });
+
+    return res.json({ success: true, withdrawal });
   } catch (error) {
     return next(error);
   }
@@ -238,5 +297,6 @@ module.exports = {
   createCheckout,
   buy,
   webhook,
-  getSellerDashboard
+  getSellerDashboard,
+  withdraw
 };
