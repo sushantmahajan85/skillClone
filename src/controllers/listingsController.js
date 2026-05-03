@@ -81,14 +81,30 @@ const sanitizeZipBundlePublicId = (originalname) => {
   return `${safe}.zip`;
 };
 
-const LISTING_FILE_FIELDS = ['fileUrl', 'fileSizeBytes', 'packageZipUrl', 'packageManifest'];
-
-/** Plain listing JSON with download/package fields removed (for buyers who have not purchased). */
+/** Plain listing JSON for visitors who have not purchased.
+ *  - Strips download URLs (fileUrl, packageZipUrl).
+ *  - Keeps packageManifest but redacts per-file URLs so the file tree is visible.
+ */
 const listingWithoutDownloadAssets = (listing) => {
   const plain = listing.toObject ? listing.toObject() : { ...listing };
-  for (const key of LISTING_FILE_FIELDS) {
-    delete plain[key];
+  delete plain.fileUrl;
+  delete plain.packageZipUrl;
+
+  if (plain.packageManifest && Array.isArray(plain.packageManifest.files)) {
+    plain.packageManifest = {
+      version: plain.packageManifest.version,
+      uploadedAt: plain.packageManifest.uploadedAt,
+      fileCount: plain.packageManifest.fileCount,
+      totalUncompressedBytes: plain.packageManifest.totalUncompressedBytes,
+      files: plain.packageManifest.files.map((f) => ({
+        path: f.path,
+        bytes: f.bytes,
+        resourceType: f.resourceType
+        // url intentionally omitted — buyers get it after purchase
+      }))
+    };
   }
+
   return plain;
 };
 
