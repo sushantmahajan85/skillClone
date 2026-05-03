@@ -1,3 +1,4 @@
+const path = require('path');
 const multer = require('multer');
 const { Readable } = require('stream');
 const AdmZip = require('adm-zip');
@@ -29,12 +30,13 @@ const inferResourceType = (relativePath) => {
   return 'raw';
 };
 
-const uploadToCloudinary = (fileBuffer, folder, resourceType = 'auto') => {
+const uploadToCloudinary = (fileBuffer, folder, resourceType = 'auto', extraOptions = {}) => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
-        resource_type: resourceType
+        resource_type: resourceType,
+        ...extraOptions
       },
       (error, result) => {
         if (error) {
@@ -63,6 +65,20 @@ const ensureZipFilename = (file) => {
   if (!base.toLowerCase().endsWith('.zip')) {
     file.originalname = `${base}.zip`;
   }
+};
+
+/** Safe Cloudinary `public_id` segment ending in `.zip` so raw bundle URLs retain a zip-like name. */
+const sanitizeZipBundlePublicId = (originalname) => {
+  const name = String(originalname || 'package.zip').trim() || 'package.zip';
+  const withZip = name.toLowerCase().endsWith('.zip') ? name : `${name}.zip`;
+  const base = path.basename(withZip);
+  const stem = base.replace(/\.zip$/i, '');
+  const safe =
+    stem
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '') || 'package';
+  return `${safe}.zip`;
 };
 
 const LISTING_FILE_FIELDS = ['fileUrl', 'fileSizeBytes', 'packageZipUrl', 'packageManifest'];
@@ -352,7 +368,8 @@ const uploadListingAssets = async (req, res, next) => {
         const zipUpload = await uploadToCloudinary(
           skillFile.buffer,
           `skill-marketplace/packages/${listing._id}/bundle`,
-          'raw'
+          'raw',
+          { public_id: sanitizeZipBundlePublicId(skillFile.originalname) }
         );
 
         const zip = new AdmZip(skillFile.buffer);
