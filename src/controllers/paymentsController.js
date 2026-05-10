@@ -6,7 +6,8 @@ const Transaction = require('../models/Transaction');
 
 /** Minimum withdrawal amount in cents ($30.00). */
 const WITHDRAW_MIN_CENTS = 3000;
-const MIN_ORDER_AMOUNT = 100;
+const MIN_ORDER_AMOUNT_CENTS = 1;
+const MAX_RECEIPT_LENGTH = 40;
 
 const getRazorpayClient = () => {
   const keyId = process.env.RAZORPAY_KEY_ID;
@@ -35,19 +36,28 @@ const createCheckout = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Listing not found or unavailable' });
     }
 
-    if (!Number.isInteger(listing.price) || listing.price < MIN_ORDER_AMOUNT) {
-      return res.status(400).json({ success: false, message: 'Listing price must be at least 100 paise' });
+    if (!Number.isFinite(listing.price) || listing.price <= 0) {
+      return res.status(400).json({ success: false, message: 'Listing price must be greater than 0 USD' });
     }
 
     const feePercent = Number(process.env.PLATFORM_FEE_PERCENT || 20);
     const platformFee = Math.round((listing.price * feePercent) / 100);
     const sellerPayout = listing.price - platformFee;
+    const amountInCents = Math.round(Number(listing.price));
+
+    if (amountInCents < MIN_ORDER_AMOUNT_CENTS) {
+      return res.status(400).json({ success: false, message: 'Listing amount must be at least 1 cent' });
+    }
 
     const razorpay = getRazorpayClient();
+    const shortListingId = String(listing._id).slice(-10);
+    const shortTimestamp = Date.now().toString(36);
+    const receipt = `l_${shortListingId}_${shortTimestamp}`.slice(0, MAX_RECEIPT_LENGTH);
+
     const order = await razorpay.orders.create({
-      amount: listing.price,
-      currency: 'INR',
-      receipt: `listing_${listing._id}_${Date.now()}`
+      amount: amountInCents,
+      currency: 'USD',
+      receipt
     });
 
     await Transaction.create({
@@ -71,6 +81,9 @@ const createCheckout = async (req, res, next) => {
   } catch (error) {
     if (error && error.statusCode === 401) {
       return res.status(401).json({ success: false, message: 'Razorpay authentication failed' });
+    }
+    if (error && error.statusCode === 400) {
+      return res.status(400).json({ success: false, message: 'Unable to create Razorpay order' });
     }
     return next(error);
   }

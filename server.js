@@ -5,9 +5,11 @@ dotenv.config();
 const express = require('express');
 const cors = require('cors');
 const passport = require('passport');
+const morgan = require('morgan');
 
 const connectDB = require('./src/config/db');
 require('./src/config/cloudinary');
+const logger = require('./src/config/logger');
 
 const authRoutes = require('./src/routes/auth');
 const listingsRoutes = require('./src/routes/listings');
@@ -32,6 +34,16 @@ app.use(express.json());
 app.use(passport.initialize());
 require('./src/config/passport');
 
+app.use(
+  morgan(':method :url :status :response-time ms', {
+    stream: {
+      write: (message) => {
+        logger.info(message.trim());
+      }
+    }
+  })
+);
+
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
@@ -46,5 +58,5 @@ app.use('/api/payments', paymentsRoutes);
 app.use(errorMiddleware);
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info(`Server running on port ${PORT}`);
 });
