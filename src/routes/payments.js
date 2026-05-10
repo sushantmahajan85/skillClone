@@ -11,6 +11,12 @@ const createCheckoutSchema = Joi.object({
   listingId: Joi.string().required()
 });
 
+const verifyPaymentSchema = Joi.object({
+  razorpay_payment_id: Joi.string().required(),
+  razorpay_order_id: Joi.string().required(),
+  razorpay_signature: Joi.string().required()
+});
+
 const buySchema = Joi.object({
   listingId: Joi.string().required()
 });
@@ -23,8 +29,8 @@ const withdrawSchema = Joi.object({
 
 router.post('/buy', auth, validate(buySchema), paymentsController.buy);
 router.post('/create-checkout', auth, validate(createCheckoutSchema), paymentsController.createCheckout);
+router.post('/verify-payment', auth, validate(verifyPaymentSchema), paymentsController.verifyPayment);
 router.post('/withdraw', auth, validate(withdrawSchema), paymentsController.withdraw);
-router.post('/webhook', paymentsController.webhook);
 router.get('/seller/dashboard', auth, paymentsController.getSellerDashboard);
 
 module.exports = router;

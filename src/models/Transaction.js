@@ -14,8 +14,9 @@ const transactionSchema = new mongoose.Schema(
     buyerId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     platformFee:   { type: Number },
     sellerPayout:  { type: Number },
-    dodoPaymentId: { type: String },
-    dodoTransferId:{ type: String },
+    razorpayOrderId: { type: String, index: true },
+    razorpayPaymentId: { type: String, index: true },
+    razorpaySignature: { type: String },
     // ── Withdrawal-only fields (undefined for purchases) ──────────────────
     /** Snapshot of payout/bank details provided at withdrawal time */
     bankDetails: { type: mongoose.Schema.Types.Mixed },

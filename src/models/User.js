@@ -10,7 +10,6 @@ const userSchema = new mongoose.Schema(
     authProvider: { type: String, enum: ['local', 'google'], required: true },
     role: { type: String, enum: ['buyer', 'seller', 'both', 'admin'], default: 'buyer' },
     sellerStatus: { type: String, enum: ['none', 'pending', 'active'], default: 'none' },
-    dodopaymentsMerchantId: { type: String, index: true },
     bio: { type: String }
   },
   { timestamps: true }

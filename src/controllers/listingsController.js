@@ -114,8 +114,8 @@ const formatBuyerTransaction = (tx) => ({
   platformFee: tx.platformFee,
   sellerPayout: tx.sellerPayout,
   status: tx.status,
-  dodoPaymentId: tx.dodoPaymentId,
-  dodoTransferId: tx.dodoTransferId,
+  razorpayOrderId: tx.razorpayOrderId,
+  razorpayPaymentId: tx.razorpayPaymentId,
   createdAt: tx.createdAt
 });
 
@@ -270,6 +270,16 @@ const getListingById = async (req, res, next) => {
 
 const createListing = async (req, res, next) => {
   try {
+    const canSell =
+      req.user.role === 'admin' ||
+      (['seller', 'both'].includes(req.user.role) && req.user.sellerStatus === 'active');
+    if (!canSell) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin-approved sellers can create listings'
+      });
+    }
+
     if (Object.prototype.hasOwnProperty.call(req.body, 'verified') && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Only admins can set verified' });
     }

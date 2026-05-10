@@ -19,7 +19,6 @@ const signToken = (user) => {
 const sanitizeUser = (user) => {
   const userObj = user.toObject();
   delete userObj.passwordHash;
-  delete userObj.dodopaymentsMerchantId;
   return userObj;
 };
 
@@ -112,7 +111,7 @@ const googleCallback = (req, res, next) => {
 
 const me = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id).select('-passwordHash -dodopaymentsMerchantId');
+    const user = await User.findById(req.user._id).select('-passwordHash');
     return res.json({ success: true, user });
   } catch (error) {
     return next(error);

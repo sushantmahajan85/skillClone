@@ -1,10 +1,26 @@
+const crypto = require('crypto');
+const Razorpay = require('razorpay');
+
 const Listing = require('../models/Listing');
-const User = require('../models/User');
 const Transaction = require('../models/Transaction');
-const dodoPayments = require('../config/dodopayments');
 
 /** Minimum withdrawal amount in cents ($30.00). */
 const WITHDRAW_MIN_CENTS = 3000;
+const MIN_ORDER_AMOUNT = 100;
+
+const getRazorpayClient = () => {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) {
+    const error = new Error('Razorpay is not configured');
+    error.status = 500;
+    throw error;
+  }
+  return new Razorpay({
+    key_id: keyId,
+    key_secret: keySecret
+  });
+};
 
 const createCheckout = async (req, res, next) => {
   try {
@@ -19,94 +35,81 @@ const createCheckout = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Listing not found or unavailable' });
     }
 
-    const seller = await User.findById(listing.sellerId);
-    if (!seller || !seller.dodopaymentsMerchantId) {
-      return res.status(400).json({ success: false, message: 'Seller is not ready to receive payments' });
+    if (!Number.isInteger(listing.price) || listing.price < MIN_ORDER_AMOUNT) {
+      return res.status(400).json({ success: false, message: 'Listing price must be at least 100 paise' });
     }
 
     const feePercent = Number(process.env.PLATFORM_FEE_PERCENT || 20);
     const platformFee = Math.round((listing.price * feePercent) / 100);
     const sellerPayout = listing.price - platformFee;
 
-    const checkout = await dodoPayments.createCheckoutSession({
+    const razorpay = getRazorpayClient();
+    const order = await razorpay.orders.create({
       amount: listing.price,
-      merchantId: seller.dodopaymentsMerchantId,
-      platformFee,
-      metadata: {
-        listingId: String(listing._id),
-        buyerId: String(req.user._id),
-        sellerId: String(seller._id)
-      },
-      customer: {
-        email: req.user.email,
-        name: req.user.name
-      }
+      currency: 'INR',
+      receipt: `listing_${listing._id}_${Date.now()}`
     });
 
     await Transaction.create({
       listingId: listing._id,
       buyerId: req.user._id,
-      sellerId: seller._id,
+      sellerId: listing.sellerId,
       amount: listing.price,
       platformFee,
       sellerPayout,
-      dodoPaymentId: checkout.payment_id || checkout.paymentId || checkout.id || checkout.session_id,
+      razorpayOrderId: order.id,
       status: 'pending'
     });
 
     return res.json({
       success: true,
-      checkoutUrl: checkout.checkout_url || checkout.checkoutUrl || checkout.url
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      key_id: process.env.RAZORPAY_KEY_ID
     });
   } catch (error) {
+    if (error && error.statusCode === 401) {
+      return res.status(401).json({ success: false, message: 'Razorpay authentication failed' });
+    }
     return next(error);
   }
 };
 
-const webhook = async (req, res, next) => {
+const verifyPayment = async (req, res, next) => {
   try {
-    const rawBodyBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
-    const signatureHeaders = {
-      'webhook-id': req.headers['webhook-id'],
-      'webhook-signature': req.headers['webhook-signature'],
-      'webhook-timestamp': req.headers['webhook-timestamp']
-    };
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      return res.status(400).json({ success: false, message: 'Missing required payment fields' });
+    }
 
-    res.sendStatus(200);
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!keySecret) {
+      return res.status(500).json({ success: false, message: 'Razorpay is not configured' });
+    }
 
-    setImmediate(async () => {
-      try {
-        const event = dodoPayments.unwrapWebhook(rawBodyBuffer, signatureHeaders);
+    const payload = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const expectedSignature = crypto.createHmac('sha256', keySecret).update(payload).digest('hex');
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+    }
 
-        if (event.type === 'payment.succeeded' || event.type === 'payment.success') {
-          const paymentId = event.data && (event.data.payment_id || event.data.paymentId);
-          const transferId = event.data && (event.data.transfer_id || event.data.transferId);
-
-          if (paymentId) {
-            await Transaction.findOneAndUpdate(
-              { dodoPaymentId: paymentId },
-              {
-                status: 'completed',
-                dodoPaymentId: paymentId,
-                dodoTransferId: transferId
-              }
-            );
-          }
-        }
-
-        if (event.type === 'merchant.approved') {
-          const merchantId = event.data && (event.data.merchant_id || event.data.merchantId);
-          if (merchantId) {
-            await User.findOneAndUpdate(
-              { dodopaymentsMerchantId: merchantId },
-              { sellerStatus: 'active' }
-            );
-          }
-        }
-      } catch (error) {
-        console.error('Webhook processing failed:', error.message);
-      }
+    const transaction = await Transaction.findOne({
+      razorpayOrderId: razorpay_order_id,
+      status: 'pending'
     });
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Pending transaction not found' });
+    }
+
+    transaction.status = 'completed';
+    transaction.razorpayPaymentId = razorpay_payment_id;
+    transaction.razorpaySignature = razorpay_signature;
+    await transaction.save();
+
+    await Listing.findByIdAndUpdate(transaction.listingId, { $inc: { purchaseCount: 1 } });
+
+    return res.json({ success: true, transaction });
   } catch (error) {
     return next(error);
   }
@@ -289,7 +292,7 @@ const buy = async (req, res, next) => {
 module.exports = {
   createCheckout,
   buy,
-  webhook,
+  verifyPayment,
   getSellerDashboard,
   withdraw
 };

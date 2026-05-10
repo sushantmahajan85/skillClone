@@ -1,7 +1,7 @@
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
-const dodoPayments = require('../config/dodopayments');
+const SellerInviteRequest = require('../models/SellerInviteRequest');
 
 const getPublicProfile = async (req, res, next) => {
   try {
@@ -32,7 +32,7 @@ const updateMe = async (req, res, next) => {
     const user = await User.findByIdAndUpdate(req.user._id, updates, {
       new: true,
       runValidators: true,
-      select: '-passwordHash -dodopaymentsMerchantId'
+      select: '-passwordHash'
     });
 
     return res.json({ success: true, user });
@@ -43,34 +43,101 @@ const updateMe = async (req, res, next) => {
 
 const becomeSeller = async (req, res, next) => {
   try {
-    let onboardingUrl = null;
+    if (req.user.role === 'admin') {
+      return res.json({ success: true, message: 'Admin users can already sell skills' });
+    }
 
-    try {
-      const sellerAccount = await dodoPayments.createSellerAccount({
-        email: req.user.email,
-        name: req.user.name,
-        metadata: {
-          userId: String(req.user._id)
+    const { skillType, skillSummary } = req.body;
+    const existingRequest = await SellerInviteRequest.findOne({ userId: req.user._id });
+    if (existingRequest && existingRequest.status === 'pending') {
+      return res.status(409).json({ success: false, message: 'Seller invite request is already pending' });
+    }
+
+    const requestPayload = {
+      skillType,
+      skillSummary,
+      status: 'pending',
+      adminNotes: '',
+      reviewedBy: null,
+      reviewedAt: null
+    };
+
+    const inviteRequest = existingRequest
+      ? await SellerInviteRequest.findOneAndUpdate({ userId: req.user._id }, requestPayload, { new: true })
+      : await SellerInviteRequest.create({ userId: req.user._id, ...requestPayload });
+
+    if (req.user.sellerStatus !== 'active') {
+      req.user.sellerStatus = 'pending';
+      await req.user.save();
+    }
+
+    return res.json({ success: true, request: inviteRequest });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getMySellerInviteRequest = async (req, res, next) => {
+  try {
+    const request = await SellerInviteRequest.findOne({ userId: req.user._id }).sort({ createdAt: -1 });
+    return res.json({ success: true, request });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const listSellerInviteRequests = async (req, res, next) => {
+  try {
+    const { status } = req.query;
+    const query = {};
+    if (status) {
+      query.status = status;
+    }
+    const requests = await SellerInviteRequest.find(query)
+      .populate('userId', 'email name role sellerStatus')
+      .populate('reviewedBy', 'name email')
+      .sort({ createdAt: -1 });
+    return res.json({ success: true, requests });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const reviewSellerInviteRequest = async (req, res, next) => {
+  try {
+    const { requestId } = req.params;
+    const { status, adminNotes } = req.body;
+
+    const inviteRequest = await SellerInviteRequest.findById(requestId);
+    if (!inviteRequest) {
+      return res.status(404).json({ success: false, message: 'Invite request not found' });
+    }
+    if (inviteRequest.status !== 'pending') {
+      return res.status(400).json({ success: false, message: 'Invite request already reviewed' });
+    }
+
+    inviteRequest.status = status;
+    inviteRequest.adminNotes = adminNotes || '';
+    inviteRequest.reviewedBy = req.user._id;
+    inviteRequest.reviewedAt = new Date();
+    await inviteRequest.save();
+
+    const targetUser = await User.findById(inviteRequest.userId);
+    if (targetUser) {
+      if (status === 'approved') {
+        targetUser.sellerStatus = 'active';
+        if (targetUser.role === 'buyer') {
+          targetUser.role = 'both';
+        } else if (targetUser.role !== 'admin' && targetUser.role !== 'both') {
+          targetUser.role = 'seller';
         }
-      });
-      req.user.dodopaymentsMerchantId = sellerAccount.customer_id || sellerAccount.id;
-      onboardingUrl = sellerAccount.onboarding_url || sellerAccount.onboardingUrl || null;
-    } catch (dodoError) {
-      // If Dodo fails (e.g. not configured), still promote the user to seller
-      console.error('Dodo seller account creation failed:', dodoError.message);
+      } else {
+        targetUser.sellerStatus = 'none';
+      }
+      await targetUser.save();
     }
 
-    req.user.sellerStatus = 'active';
-    // Upgrade role: buyer → both, none/seller → seller
-    if (req.user.role === 'buyer') {
-      req.user.role = 'both';
-    } else if (req.user.role !== 'both' && req.user.role !== 'admin') {
-      req.user.role = 'seller';
-    }
-
-    await req.user.save();
-
-    return res.json({ success: true, onboardingUrl });
+    return res.json({ success: true, request: inviteRequest });
   } catch (error) {
     return next(error);
   }
@@ -115,6 +182,9 @@ module.exports = {
   getPublicProfile,
   updateMe,
   becomeSeller,
+  getMySellerInviteRequest,
+  listSellerInviteRequests,
+  reviewSellerInviteRequest,
   getMyPurchases,
   getMyListings
 };

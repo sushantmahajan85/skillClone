@@ -1,3 +1,4 @@
+const path = require('path');
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -26,15 +27,7 @@ app.use(
   })
 );
 
-app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-
-const jsonParser = express.json();
-app.use((req, res, next) => {
-  if (req.path === '/api/payments/webhook') {
-    return next();
-  }
-  return jsonParser(req, res, next);
-});
+app.use(express.json());
 
 app.use(passport.initialize());
 require('./src/config/passport');
@@ -42,6 +35,8 @@ require('./src/config/passport');
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingsRoutes);
