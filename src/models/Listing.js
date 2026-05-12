@@ -32,6 +32,7 @@ const listingSchema = new mongoose.Schema(
     },
     tags: { type: [String], default: [] },
     categories: { type: [String], default: [] },
+    connectors: { type: [String], default: [] },
     purchaseCount: { type: Number, default: 0, min: 0 },
     verified: { type: Boolean, default: false, index: true },
     featured: { type: Boolean, default: false, index: true },

@@ -272,11 +272,11 @@ const createListing = async (req, res, next) => {
   try {
     const canSell =
       req.user.role === 'admin' ||
-      (['seller', 'both'].includes(req.user.role) && req.user.sellerStatus === 'active');
+      ['seller', 'both', 'buyer'].includes(req.user.role);
     if (!canSell) {
       return res.status(403).json({
         success: false,
-        message: 'Only admin-approved sellers can create listings'
+        message: 'You must be logged in to create a listing'
       });
     }
 
